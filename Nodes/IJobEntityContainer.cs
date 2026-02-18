@@ -9,18 +9,21 @@ using Unity.Entities;
 [assembly: MakeSerializable(typeof(MaxyGames.UNode.Nodes.IJobEntityContainer))]
 namespace MaxyGames.UNode.Nodes {
 	[EventGraph("IJobEntity", createName = "newJob")]
-	public class IJobEntityContainer : BaseJobContainer, ISuperNodeWithEntry, IGeneratorPrePostInitializer, IErrorCheck {
+	[TypeIcons.IconGuid("bc396893cb8045f4da8ffa1d71e478da")]
+	public class IJobEntityContainer : BaseJobContainer, IIcon, ISuperNodeWithEntry, IGeneratorPrePostInitializer, IErrorCheck {
 		public enum DataKind {
 			ReadOnly,
 			ReadWrite,
 			None,
 		}
+		[Flags]
 		public enum IndexKind {
-			None,
-			Entity,
-			Chunk,
-			ChunkAndEntity
+			None = 0,
+			ChunkIndexInQuery = 1,
+			EntityIndexInChunk = 2,
+			EntityIndexInQuery = 4,
 		}
+		[Serializable]
 		public class Data {
 			public string id = uNodeUtility.GenerateUID();
 
@@ -40,27 +43,35 @@ namespace MaxyGames.UNode.Nodes {
 		public IndexKind indexKind;
 
 		public ValueOutput entity { get; private set; }
-		public ValueOutput index { get; private set; }
+		public ValueOutput chunkIndexInQuery { get; private set; }
+		public ValueOutput entityIndexInChunk { get; private set; }
+		public ValueOutput entityIndexInQuery { get; private set; }
 
 		public override void RegisterEntry(BaseEntryNode node) {
 			base.RegisterEntry(node);
 
 			entity = Node.Utilities.ValueOutput(node, nameof(entity), typeof(Entity), PortAccessibility.ReadOnly);
 
-			switch(indexKind) {
-				case IndexKind.None:
-					//Cleanup if changed
-					index = null;
-					break;
-				case IndexKind.Chunk:
-					index = Node.Utilities.ValueOutput(node, nameof(index), typeof(int)).SetName("chunkIndexInQuery");
-					break;
-				case IndexKind.Entity:
-					index = Node.Utilities.ValueOutput(node, nameof(index), typeof(int)).SetName("entityIndexInQuery");
-					break;
-				case IndexKind.ChunkAndEntity:
-					index = Node.Utilities.ValueOutput(node, nameof(index), typeof(int));
-					break;
+			//Cleanup
+			chunkIndexInQuery = null;
+			entityIndexInQuery = null;
+			entityIndexInChunk = null;
+			//Create index ports
+			if(indexKind.HasFlags(IndexKind.ChunkIndexInQuery)) {
+				chunkIndexInQuery = Node.Utilities.ValueOutput(node, nameof(chunkIndexInQuery), typeof(int)).SetName("chunkIndexInQuery");
+				chunkIndexInQuery.SetTooltip("Used as the chunk index inside the current query.");
+			}
+			if(indexKind.HasFlags(IndexKind.EntityIndexInQuery)) {
+				entityIndexInQuery = Node.Utilities.ValueOutput(node, nameof(entityIndexInQuery), typeof(int)).SetName("entityIndexInQuery");
+				entityIndexInQuery.SetTooltip("Used as a way to get the packed entity index inside the current query.\n\n" +
+					"This is generally way more expensive than ChunkIndexInQuery and EntityIndexInChunk.\n" +
+					"As it it will schedule a EntityQuery.CalculateBaseEntityIndexArrayAsync job to get an offset buffer.\n" +
+					"If you just want a sortkey for your EntityCommandBuffer.ParallelWriter simply use ChunkIndexInQuery\n" +
+					"as it is different for every thread, which is all a ParallelWriter needs to sort with.");
+			}
+			if(indexKind.HasFlags(IndexKind.EntityIndexInChunk)) {
+				entityIndexInChunk = Node.Utilities.ValueOutput(node, nameof(entityIndexInChunk), typeof(int)).SetName("entityIndexInChunk");
+				entityIndexInChunk.SetTooltip("Used as the entity index inside the current chunk.");
 			}
 
 			for(int i = 0; i < datas.Count; i++) {
@@ -98,9 +109,17 @@ namespace MaxyGames.UNode.Nodes {
 				CG.RegisterPort(entity, () => vName);
 			}
 
-			if(index != null && index.hasValidConnections) {
-				var vName = CG.RegisterVariable(index);
-				CG.RegisterPort(index, () => vName);
+			if(chunkIndexInQuery != null) {
+				var vName = CG.RegisterVariable(chunkIndexInQuery);
+				CG.RegisterPort(chunkIndexInQuery, () => vName);
+			}
+			if(entityIndexInQuery != null) {
+				var vName = CG.RegisterVariable(entityIndexInQuery);
+				CG.RegisterPort(entityIndexInQuery, () => vName);
+			}
+			if(entityIndexInChunk != null) {
+				var vName = CG.RegisterVariable(entityIndexInChunk);
+				CG.RegisterPort(entityIndexInChunk, () => vName);
 			}
 
 			List<ECSJobVariable> localVariables = JobVariables;
@@ -127,7 +146,13 @@ namespace MaxyGames.UNode.Nodes {
 				if(localVariables.Count > 0) {
 					for(int i = 0; i < localVariables.Count; i++) {
 						var data = localVariables[i];
-						classBuilder.RegisterVariable(CG.DeclareVariable(data.type, data.name, modifier: FieldModifier.PublicModifier));
+						classBuilder.RegisterVariable(
+							CG.DeclareVariable(
+								data.type, 
+								data.name, 
+								modifier: FieldModifier.PublicModifier, 
+								attributes: data.attributeData.Select(att => CG.Attribute(att)))
+							);
 					}
 				}
 
@@ -139,21 +164,19 @@ namespace MaxyGames.UNode.Nodes {
 				if(entity.hasValidConnections) {
 					parameters.Add(new CG.MPData(CG.GetVariableName(entity), typeof(Entity)));
 				}
-				if(index != null && index.hasValidConnections) {
-					CG.MPData paramData = new CG.MPData(CG.GetVariableName(index), typeof(int));
-
-					switch(indexKind) {
-						case IndexKind.Chunk:
-							paramData.RegisterAttribute(typeof(EntityIndexInChunk));
-							break;
-						case IndexKind.ChunkAndEntity:
-							paramData.RegisterAttribute(typeof(EntityIndexInChunk));
-							paramData.RegisterAttribute(typeof(EntityIndexInQuery));
-							break;
-						case IndexKind.Entity:
-							paramData.RegisterAttribute(typeof(EntityIndexInQuery));
-							break;
-					}
+				if(chunkIndexInQuery != null) {
+					CG.MPData paramData = new CG.MPData(CG.GetVariableName(chunkIndexInQuery), typeof(int));
+					paramData.RegisterAttribute(typeof(ChunkIndexInQuery));
+					parameters.Add(paramData);
+				}
+				if(entityIndexInQuery != null) {
+					CG.MPData paramData = new CG.MPData(CG.GetVariableName(entityIndexInQuery), typeof(int));
+					paramData.RegisterAttribute(typeof(EntityIndexInQuery));
+					parameters.Add(paramData);
+				}
+				if(entityIndexInChunk != null) {
+					CG.MPData paramData = new CG.MPData(CG.GetVariableName(entityIndexInChunk), typeof(int));
+					paramData.RegisterAttribute(typeof(EntityIndexInChunk));
 					parameters.Add(paramData);
 				}
 				for(int i = 0; i < variableNames.Count; i++) {
@@ -236,6 +259,10 @@ namespace MaxyGames.UNode.Nodes {
 					return;
 				}
 			}
+		}
+
+		public Type GetIcon() {
+			return typeof(IJobEntityContainer);
 		}
 	}
 }

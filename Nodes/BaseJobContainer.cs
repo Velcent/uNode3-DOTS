@@ -38,7 +38,7 @@ namespace MaxyGames.UNode.Nodes {
 
 		public virtual string Title => name;
 
-		public const string Scope = "ECS_Job";
+		public string Scope => "ECS_Job";
 
 		public override void RegisterEntry(BaseEntryNode node) {
 			for(int i = 0; i < variableDatas.Count; i++) {

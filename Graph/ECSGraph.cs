@@ -16,6 +16,7 @@ namespace MaxyGames.UNode {
 		allowAutoCompile = false,
 		isScriptGraph = true,
 		generationKind = GenerationKind.Compatibility)]
+	[TypeIcons.IconGuid("9b88b1c74c6a1244b97f851a405560c9")]
 	public class ECSGraph : GraphAsset, IClassGraph, IClassModifier, IGraphWithVariables, IGraphWithProperties, IGraphWithFunctions, IGraphWithAttributes, INamespaceSystem, ICustomMainGraph, IGraphWithEventGraph, IGeneratorPrePostInitializer {
 		public string @namespace;
 		public List<string> usingNamespaces = new List<string>() { "Unity.Burst", "Unity.Entities", "Unity.Transforms", "Unity.Mathematics" };
@@ -220,6 +221,10 @@ namespace MaxyGames.UNode {
 
 		private void OnValidate() {
 			scriptData.fileName = this.name;
+		}
+
+		public override Type GetIcon() {
+			return typeof(ECSGraph);
 		}
 	}
 }

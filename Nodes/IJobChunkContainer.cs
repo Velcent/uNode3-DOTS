@@ -10,7 +10,8 @@ using Unity.Burst.Intrinsics;
 [assembly: MakeSerializable(typeof(MaxyGames.UNode.Nodes.IJobChunkContainer))]
 namespace MaxyGames.UNode.Nodes {
 	[EventGraph("IJobChunk", createName = "newJobChunk")]
-	public class IJobChunkContainer : BaseJobContainer, ISuperNodeWithEntry, IGeneratorPrePostInitializer {
+	[TypeIcons.IconGuid("06485293297100e45b9d127ec43e7ae3")]
+	public class IJobChunkContainer : BaseJobContainer, IIcon, ISuperNodeWithEntry, IGeneratorPrePostInitializer {
 		public ValueOutput chunk { get; private set; }
 		public ValueOutput unfilteredChunkIndex { get; private set; }
 		public ValueOutput useEnabledMask { get; private set; }
@@ -71,7 +72,13 @@ namespace MaxyGames.UNode.Nodes {
 				if(localVariables.Count > 0) {
 					for(int i = 0; i < localVariables.Count; i++) {
 						var data = localVariables[i];
-						classBuilder.RegisterVariable(CG.DeclareVariable(data.type, data.name, modifier: FieldModifier.PublicModifier));
+						classBuilder.RegisterVariable(
+							CG.DeclareVariable(
+								data.type,
+								data.name,
+								modifier: FieldModifier.PublicModifier,
+								attributes: data.attributeData.Select(att => CG.Attribute(att)))
+							);
 					}
 				}
 
@@ -95,6 +102,10 @@ namespace MaxyGames.UNode.Nodes {
 				classData.RegisterNestedType(CG.WrapWithInformation(classBuilder.GenerateCode(), this));
 			});
 		}
+
+		public Type GetIcon() {
+			return typeof(IJobChunkContainer);
+		}
 	}
 }
 
@@ -116,6 +127,8 @@ namespace MaxyGames.UNode.Editors {
 
 		public override void DrawLayouted(DrawerOption option) {
 			var container = GetValue(option);
+
+			DrawHeader(option);
 
 			uNodeGUI.DrawCustomList(container.variableDatas, "Variables",
 				drawElement: (position, index, value) => {
