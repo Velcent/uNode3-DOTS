@@ -148,7 +148,7 @@ namespace MaxyGames.UNode {
 		/// <param name="commandName">When this method returns, contains the name of the ECS command variable.</param>
 		/// <param name="commandType">When this method returns, contains the type of the ECS command.</param>
 		/// <param name="autoRegisterVariableInJob">true to automatically register the command variable in the job; otherwise, false.</param>
-		public static void GetECSCommand(NodeObject nodeObject, out INodeEntitiesForeach entitiesForeach, out string commandName, out Type commandType, bool autoRegisterVariableInJob = true, bool isValue = false) {
+		public static void GetECSCommand(NodeObject nodeObject, out INodeEntitiesForeach entitiesForeach, out string commandName, out Type commandType, bool autoRegisterVariableInJob = true, bool isValue = false, bool alwaysUseSchedule = false) {
 			commandName = null;
 			commandType = null;
 			var conenctions = CG.Nodes.FindAllConnections(nodeObject, false, false, true, isValue);
@@ -190,7 +190,7 @@ namespace MaxyGames.UNode {
 					commandType = typeof(EntityCommandBuffer.ParallelWriter);
 					return;
 				}
-				if(executionMode == ECSLogicExecutionMode.Auto || executionMode == ECSLogicExecutionMode.Schedule) {
+				if(executionMode == ECSLogicExecutionMode.Auto || executionMode == ECSLogicExecutionMode.Schedule || alwaysUseSchedule) {
 					var ecbName = GetECBSingleton<EndSimulationEntityCommandBufferSystem.Singleton>(nodeObject);
 					if(autoRegisterVariableInJob) {
 						var variables = entities.JobVariables;

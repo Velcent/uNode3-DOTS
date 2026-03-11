@@ -22,13 +22,21 @@ namespace MaxyGames.UNode.Editors {
 				else if(state == PlayModeStateChange.ExitingPlayMode) {
 					UninjectSystems();
 				}
+				else if(state == PlayModeStateChange.ExitingEditMode) {
+					if(loadedAssembly == null) {
+						var path = SystemCompiler.OutputPath + ".dll";
+						if(File.Exists(path)) {
+							//Assembly should be loaded before play mode, but just in case, try to load it again if not loaded yet.
+							LoadCompiledAssembly(path);
+						}
+					}
+				}
 			};
 		}
 
 		private static Assembly loadedAssembly;
 		private static List<SystemHandle> liveSystems = new();
 		private static List<ComponentSystemBase> liveManagedSystems = new();
-		private static object m_oldRegistration, m_oldStructTypes;
 		private static Action postAction;
 
 		public static void LoadCompiledAssembly(string path) {
@@ -83,10 +91,15 @@ namespace MaxyGames.UNode.Editors {
 			//method.InvokeOptimized(null);
 			Debug.Log("Loaded system assembly: " + loadedAssembly.FullName);
 		}
+
 		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-		public static void InitializeOnPlay() {
+		static void InitializeOnPlay() {
 			if(loadedAssembly == null) {
-				return;
+				var path = SystemCompiler.OutputPath + ".dll";
+				if(File.Exists(path) == false) {
+					//Skip if no compiled assembly found, which can happen when entering play mode before any graph is compiled. Systems will be injected when the some graph is compiled and loaded.
+					return;
+				}
 			}
 
 			liveSystems.Clear();
@@ -120,6 +133,8 @@ namespace MaxyGames.UNode.Editors {
 
 			ActiveSystemNames.Clear();
 
+			var list = StaticListPool<Type>.Allocate();
+
 			foreach(var type in loadedAssembly.GetTypes()) {
 				if(!type.IsClass && !type.IsValueType)
 					continue;
@@ -130,7 +145,8 @@ namespace MaxyGames.UNode.Editors {
 					simulationGroup.AddSystemToUpdateList(handle);
 					liveSystems.Add(handle);
 					ActiveSystemNames.Add(type.FullName + " (ISystem)");
-					Debug.Log($"Injected ISystem: {type.FullName}");
+					list.Add(type);
+					//Debug.Log($"Injected ISystem: {type.FullName}");
 				}
 				else if(typeof(SystemBase).IsAssignableFrom(type)) {
 					// Inject SystemBase (class-based)
@@ -138,9 +154,19 @@ namespace MaxyGames.UNode.Editors {
 					simulationGroup.AddSystemToUpdateList(managedSystem);
 					liveManagedSystems.Add(managedSystem);
 					ActiveSystemNames.Add(type.FullName + " (SystemBase)");
-					Debug.Log($"Injected SystemBase: {type.FullName}");
+					list.Add(type);
+					//Debug.Log($"Injected SystemBase: {type.FullName}");
 				}
 			}
+
+			if(list.Count > 0) {
+				Debug.Log($"Injected {list.Count} systems from ECS Graphs.\n" + string.Join('\n', list.Select(item => item.IsValueType ? 
+					$"ISystem => {item.PrettyName(true)}" : 
+					$"SystemBase => {item.PrettyName(true)}")));
+			}
+			//else {
+			//	Debug.LogWarning("No systems found to inject in the loaded assembly.");
+			//}
 		}
 
 		public static void UninjectSystems() {

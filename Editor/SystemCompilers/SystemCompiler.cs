@@ -51,10 +51,7 @@ namespace MaxyGames.UNode.Editors {
 							Debug.Log($"{msg.type}: {msg.message}");
 						}
 					}
-					if(valid) {
-						Debug.Log("Compiled to: " + path);
-					}
-					else {
+					if(valid == false) {
 						Debug.LogError("Compile failed");
 						return;
 					}
@@ -63,11 +60,14 @@ namespace MaxyGames.UNode.Editors {
 					File.WriteAllBytes(OutputPath + ".dll", rawAssembly);
 					File.WriteAllBytes(OutputPath + ".pdb", rawPdb);
 
-					HotReloadSystemManager.LoadCompiledAssembly(OutputPath + ".dll");
+					Debug.Log("Compiled to: " + OutputPath);
+
+					if(Application.isPlaying)
+						HotReloadSystemManager.LoadCompiledAssembly(OutputPath + ".dll");
 					callback?.Invoke(true);
 				};
 
-				builder.buildStarted += path => Debug.Log("Starting compile: " + path);
+				builder.buildStarted += path => Debug.Log("Starting compile scripts" );
 
 				if(!builder.Build()) {
 					Debug.LogError("Compile failed to start");
@@ -104,7 +104,8 @@ namespace MaxyGames.UNode.Editors {
 					File.WriteAllBytes(OutputPath + ".pdb", rawPdb);
 
 					Debug.Log("Compiled systems successfully.");
-					HotReloadSystemManager.LoadCompiledAssembly(OutputPath + ".dll");
+					if(Application.isPlaying)
+						HotReloadSystemManager.LoadCompiledAssembly(OutputPath + ".dll");
 					callback?.Invoke(true);
 				}
 			}
@@ -153,6 +154,7 @@ namespace MaxyGames.UNode.Editors {
 			var rawPdb1 = File.ReadAllBytes(path + ".pdb");
 			var compiledAssembly = new uNodeECSCompiledAssembly(rawAssembly1, rawPdb1, path, references.ToArray(), new string[0]);
 			foreach(var v in ilpp) {
+				if(v.GetType().Name == "BurstILPostProcessor") continue;
 				if(v.WillProcess(compiledAssembly)) {
 					var iLPostProcessResult = v.Process(compiledAssembly);
 					//Debug.Log(v.GetType() + ": " + iLPostProcessResult);

@@ -8,7 +8,11 @@ using Unity.Entities;
 
 namespace MaxyGames.UNode.Nodes {
 	public abstract class ECSNode : FlowNode {
+		[Tooltip("The execution mode of the node. Auto will automatically determine the execution mode based on the context of the node. Run will execute the logic immediately, Schedule will schedule the logic to be executed later, ScheduleParallel will schedule the logic to be executed in parallel.")]
 		public ECSLogicExecutionMode executionMode = ECSLogicExecutionMode.Auto;
+		[Tooltip("If true, the execution will always use EntityCommandBuffer to schedule the execution later to safety execute from structural changes.")]
+		[Hide(nameof(executionMode), ECSLogicExecutionMode.Auto, false)]
+		public bool alwaysUseSchedule = true;
 
 		[NonSerialized]
 		public ValueInput entity;
@@ -50,11 +54,12 @@ namespace MaxyGames.UNode.Nodes {
 		protected virtual void RegisterECSPort() { }
 
 		protected virtual bool IsValueECSNode => false;
+		protected virtual bool AlwaysUseSchedule => alwaysUseSchedule;
 
 		public override void OnGeneratorInitialize() {
 			base.OnGeneratorInitialize();
 			if(executionMode == ECSLogicExecutionMode.Auto) {
-				ECSGraphUtility.GetECSCommand(this, out var entities, out var commandName, out var commandType, isValue: IsValueECSNode);
+				ECSGraphUtility.GetECSCommand(this, out var entities, out var commandName, out var commandType, isValue: IsValueECSNode, alwaysUseSchedule: AlwaysUseSchedule);
 				CG.RegisterUserObject<(INodeEntitiesForeach, string, Type)>((entities, commandName, commandType), ("ecs_command", this));
 			}
 		}

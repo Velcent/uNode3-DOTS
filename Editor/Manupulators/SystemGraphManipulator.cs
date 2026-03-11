@@ -33,4 +33,38 @@ namespace MaxyGames.UNode.Editors {
 			SystemCompiler.GenerateAndCompileGraphs();
 		}
 	}
+
+	class ECSValueAssignator : DefaultValueAssignator {
+		public override int order => int.MinValue;
+
+		public override bool Process(ValueInput port, Type type, FilterAttribute filter) {
+			if(type == typeof(AllocatorManager.AllocatorHandle)) {
+				port.AssignToDefault(Allocator.Temp);
+				return true;
+			}
+			else if(type == typeof(Entity)) {
+				port.AssignToDefault(MemberData.CreateFromMember(typeof(Entity).GetMemberCached(nameof(Entity.Null))));
+				return true;
+			}
+			else if(type == typeof(EntityManager)) {
+				port.AssignToDefault(MemberData.None);
+				return true;
+			}
+			else if(type == typeof(EntityCommandBuffer)) {
+				port.AssignToDefault(MemberData.None);
+				return true;
+			}
+			else if(type.IsValueType) {
+				if(type.IsCastableTo(typeof(IComponentData))) {
+					port.AssignToDefault(MemberData.None);
+					return true;
+				}
+				if(type.IsCastableTo(typeof(IBufferElementData))) {
+					port.AssignToDefault(MemberData.None);
+					return true;
+				}
+			}
+			return false;
+		}
+	}
 }

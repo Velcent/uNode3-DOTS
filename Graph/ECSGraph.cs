@@ -24,7 +24,7 @@ namespace MaxyGames.UNode {
 		public ClassModifier modifier = new ClassModifier() { Partial = true };
 		public SerializedType inheritType = typeof(ValueType);
 
-		//public bool burstCompile = true;
+		public bool burstCompile = true;
 		public List<SerializedType> requiredForUpdates = new List<SerializedType>();
 
 		[HideInInspector, SerializeField]
@@ -197,18 +197,18 @@ namespace MaxyGames.UNode {
 				}
 			}
 
-			//if(IsISystem && burstCompile && !CG.debugScript) {
-			//	onCreate.RegisterAttribute(typeof(BurstCompileAttribute));
-			//	onUpdate.RegisterAttribute(typeof(BurstCompileAttribute));
-			//	onDestroy.RegisterAttribute(typeof(BurstCompileAttribute));
-			//}
+			if(IsISystem && burstCompile && !CG.debugScript) {
+				onCreate.RegisterAttribute(typeof(BurstCompileAttribute));
+				onUpdate.RegisterAttribute(typeof(BurstCompileAttribute));
+				onDestroy.RegisterAttribute(typeof(BurstCompileAttribute));
+			}
 
 			//Post generations
 			CG.RegisterPostGeneration((classData) => {
 				if(IsISystem) {
-					//if(burstCompile && !CG.debugScript && GraphData.attributes.Any(a => a.type == typeof(BurstCompileAttribute)) == false) {
-					//	classData.RegisterAttribute(typeof(BurstCompileAttribute));
-					//}
+					if(burstCompile && !CG.debugScript && GraphData.attributes.Any(a => a.type == typeof(BurstCompileAttribute)) == false) {
+						classData.RegisterAttribute(typeof(BurstCompileAttribute));
+					}
 					classData.implementedInterfaces.Add(typeof(ISystem));
 				}
 
