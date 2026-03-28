@@ -8,8 +8,8 @@ using Unity.Entities;
 namespace MaxyGames.UNode.Editors {
 	[CustomEditor(typeof(ECSGraph), true)]
 	public class ECSGraphEditor : Editor {
-		private static FilterAttribute typeFilter = new FilterAttribute() { DisplayReferenceType = false, DisplayValueType = true };
-		private static FilterAttribute systemFilter = new FilterAttribute(typeof(ISystem), typeof(SystemBase));
+		private static FilterAttribute typeFilter = new FilterAttribute() { DisplayReferenceType = true, DisplayValueType = true };
+		//private static FilterAttribute systemFilter = new FilterAttribute(typeof(ISystem), typeof(SystemBase));
 		private static FilterAttribute inheritFilter = new FilterAttribute(typeof(SystemBase)) {
 			DisplaySealedType = false,
 			ArrayManipulator = false,
@@ -19,13 +19,11 @@ namespace MaxyGames.UNode.Editors {
 
 		static ECSGraphEditor() {
 			typeFilter.ValidateType = (type) => {
-				if(type.IsValueType) {
-					if(type.HasImplementInterface(typeof(Unity.Entities.IComponentData))) {
-						return true;
-					}
-					if(type.HasImplementInterface(typeof(Unity.Entities.ISharedComponentData))) {
-						return true;
-					}
+				if(type.HasImplementInterface(typeof(Unity.Entities.IComponentData))) {
+					return true;
+				}
+				if(type.HasImplementInterface(typeof(Unity.Entities.ISharedComponentData))) {
+					return true;
 				}
 				return false;
 			};

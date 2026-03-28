@@ -33,7 +33,9 @@ namespace MaxyGames.UNode.Nodes {
 									new[] { entity.CGValue(), component.CGValue() });
 							}
 							else {
-								return (nameof(EntityManager.AddComponentObject),
+								// For managed IComponentData, we need to use register namespace as the AddComponentData is an extension method in EntityManagerExtensions which is in Unity.Entities namespace, and we need to register it to avoid missing method error.
+								CG.RegisterUsingNamespace("Unity.Entities");
+								return (nameof(EntityManager.AddComponentData),
 									new[] { component.ValueType },
 									new[] { entity.CGValue(), component.CGValue() });
 							}

@@ -10,7 +10,7 @@ using Unity.Collections;
 namespace MaxyGames.UNode.Nodes {
     [NodeMenu("ECS/Data", "GetSingleton", scope = NodeScope.ECSGraphAndJob, outputs = new[] { typeof(IComponentData) })]
     public class GetSingleton : ValueNode {
-		[Filter(typeof(IComponentData), DisplayAbstractType = false, DisplayReferenceType =false)]
+		[Filter(typeof(IComponentData), DisplayAbstractType = false)]
 		public SerializedType type = SerializedType.None;
 
 		private const PortAccessibility accessibility = PortAccessibility.ReadOnly;
@@ -28,7 +28,15 @@ namespace MaxyGames.UNode.Nodes {
 		public override void OnGeneratorInitialize() {
 			base.OnGeneratorInitialize();
 			{
-				var code = ECSGraphUtility.GetValueCode(this, "singleton_" + type.type.Name, type, mode => CG.Invoke(typeof(SystemAPI), nameof(SystemAPI.GetSingleton), new[] { type.type }), PortAccessibility.ReadOnly);
+				string code;
+				if(type.type.IsValueType) {
+					code = ECSGraphUtility.GetValueCode(this, "singleton_" + type.type.Name, type, mode => CG.Invoke(typeof(SystemAPI), nameof(SystemAPI.GetSingleton), new[] { type.type }), PortAccessibility.ReadOnly);
+				}
+				else {
+					code = ECSGraphUtility.GetValueCode(this, "singleton_" + type.type.Name, type, mode => 
+						CG.Access(typeof(SystemAPI), nameof(SystemAPI.ManagedAPI)).
+						CGInvoke(nameof(SystemAPI.GetSingleton), new[] { type.type }), PortAccessibility.ReadOnly);
+				}
 				CG.RegisterUserObject<Func<string>>(() => {
 					return code;
 				}, ("code", this));

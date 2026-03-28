@@ -4,11 +4,12 @@ using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using System.Collections.Generic;
 using System.IO;
+using System;
 
 namespace MaxyGames.UNode.Editors {
 	public class SystemHotReloadWindow : EditorWindow {
 		[MenuItem("Tools/uNode ECS/System Hot Reload")]
-		public static void Open() => GetWindow<SystemHotReloadWindow>("DOTS System Hot Reload");
+		public static void Open() => GetWindow<SystemHotReloadWindow>("System Hot Reload");
 
 		private ListView listView;
 
@@ -45,8 +46,27 @@ namespace MaxyGames.UNode.Editors {
 			spacer.style.flexGrow = 1;
 			root.Add(spacer);
 			root.Add(new Button(() => {
-				listView.RefreshItems();
+				Refresh();
 			}) { text = "Refresh" });
+
+			EditorApplication.playModeStateChanged += OnPlayModeChanged;
+		}
+
+		private void OnDisable() {
+			EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+		}
+
+		private void OnPlayModeChanged(PlayModeStateChange change) {
+			if (change == PlayModeStateChange.EnteredPlayMode) {
+				Refresh();
+			}
+			else if (change == PlayModeStateChange.ExitingPlayMode) {
+				Refresh();
+			}
+		}
+
+		void Refresh() {
+			listView.RefreshItems();
 		}
 	}
 }

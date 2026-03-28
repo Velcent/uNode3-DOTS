@@ -34,9 +34,18 @@ namespace MaxyGames.UNode.Editors {
 			};
 		}
 
+		struct SystemData {
+			public SystemHandle systemHandle;
+			public ComponentSystemBase managedSystem;
+			public Type systemType;
+
+			public bool IsManagedSystem => managedSystem != null;
+			public SystemTypeIndex GetSystemTypeIndex => TypeManager.GetSystemTypeIndex(systemType);
+			public Unity.Collections.NativeList<TypeManager.SystemAttribute> UpdateInGroupAttributes => TypeManager.GetSystemAttributes(GetSystemTypeIndex, TypeManager.SystemAttributeKind.UpdateInGroup);
+		}
+
 		private static Assembly loadedAssembly;
-		private static List<SystemHandle> liveSystems = new();
-		private static List<ComponentSystemBase> liveManagedSystems = new();
+		private static List<SystemData> allActiveSystems = new();
 		private static Action postAction;
 
 		public static void LoadCompiledAssembly(string path) {
@@ -61,14 +70,15 @@ namespace MaxyGames.UNode.Editors {
 				//type.GetFieldCached("s_StructTypes").SetValue(null, SerializerUtility.Duplicate(m_oldStructTypes));
 			};
 			loadedAssembly = Assembly.Load(File.ReadAllBytes(path), File.ReadAllBytes(Path.ChangeExtension(path, ".pdb")));
-			foreach(var type in loadedAssembly.GetTypes()) {
+			foreach(var t in loadedAssembly.GetTypes()) {
+				var type = t;
 				if(type.Name.StartsWith("__")) {
 					var methods = type.GetMethods();
 					foreach(var m in methods) {
 						if(m.IsDefined(typeof(RuntimeInitializeOnLoadMethodAttribute), false)) {
 							//Debug.Log(m);
 							var method = m;
-							postAction += () => EarlyInitHelpers.AddEarlyInitFunction(() => m.InvokeOptimized(null));
+							postAction += () => EarlyInitHelpers.AddEarlyInitFunction(() => method.InvokeOptimized(null));
 						}
 					}
 				}
@@ -81,8 +91,12 @@ namespace MaxyGames.UNode.Editors {
 					//var method = typeof(TypeManager).GetMemberCached("AddSystemTypeToTablesAfterInit") as MethodInfo;
 					//method.InvokeOptimized(null, type);
 				}
-				postAction();
 			}
+			postAction();
+
+			EarlyInitHelpers.FlushEarlyInits();
+
+			SystemBaseRegistry.InitializePendingTypes();
 
 			//var method = typeof(TypeManager).GetMemberCached("RegisterStaticAssemblyTypes") as MethodInfo;
 			//HashSet<Type> hash = new();
@@ -102,8 +116,7 @@ namespace MaxyGames.UNode.Editors {
 				}
 			}
 
-			liveSystems.Clear();
-			liveManagedSystems.Clear();
+			allActiveSystems.Clear();
 			ActiveSystemNames.Clear();
 
 			//TypeManager.Shutdown();
@@ -114,13 +127,20 @@ namespace MaxyGames.UNode.Editors {
 			InjectSystems();
 		}
 
-		public static void InjectSystems() {
+		public static void InjectSystems(bool log = true) {
 			if(loadedAssembly == null) {
-				Debug.LogWarning("No compiled systems loaded.");
+				if(log)
+					Debug.LogWarning("No compiled systems loaded.");
+				return;
+			}
+			if(Application.isPlaying == false) {
+				if(log)
+					Debug.Log("Prevent Inject System because not in play mode");
 				return;
 			}
 			if(ActiveSystemNames.Count > 0) {
-				Debug.Log("Prevent Inject System because already injected");
+				if(log)
+					Debug.Log("Prevent Inject System because already injected");
 				return;
 			}
 
@@ -129,68 +149,120 @@ namespace MaxyGames.UNode.Editors {
 				Debug.LogError("No active Default World.");
 				return;
 			}
-			var simulationGroup = world.GetOrCreateSystemManaged<SimulationSystemGroup>();
-
+			//var simulationGroup = world.GetOrCreateSystemManaged<SimulationSystemGroup>();
 			ActiveSystemNames.Clear();
 
 			var list = StaticListPool<Type>.Allocate();
 
-			foreach(var type in loadedAssembly.GetTypes()) {
-				if(!type.IsClass && !type.IsValueType)
-					continue;
+			try {
+				foreach(var type in loadedAssembly.GetTypes()) {
+					if(!type.IsClass && !type.IsValueType)
+						continue;
+					if(typeof(ISystem).IsAssignableFrom(type) && type.IsValueType) {
+						// Inject ISystem (struct-based)
+						var handle = world.GetOrCreateSystem(type);
+						//simulationGroup.AddSystemToUpdateList(handle);
 
-				if(typeof(ISystem).IsAssignableFrom(type) && type.IsValueType) {
-					// Inject ISystem (struct-based)
-					var handle = world.GetOrCreateSystem(type);
-					simulationGroup.AddSystemToUpdateList(handle);
-					liveSystems.Add(handle);
-					ActiveSystemNames.Add(type.FullName + " (ISystem)");
-					list.Add(type);
-					//Debug.Log($"Injected ISystem: {type.FullName}");
+						allActiveSystems.Add(new SystemData() {
+							systemHandle = handle,
+							systemType = type,
+						});
+
+						ActiveSystemNames.Add(type.FullName + " (ISystem)");
+						list.Add(type);
+						//Debug.Log($"Injected ISystem: {type.FullName}");
+					}
+					else if(typeof(SystemBase).IsAssignableFrom(type)) {
+						// Inject SystemBase (class-based)
+						var managedSystem = world.GetOrCreateSystemManaged(type);
+						//simulationGroup.AddSystemToUpdateList(managedSystem);
+
+						allActiveSystems.Add(new SystemData() {
+							systemHandle = managedSystem.SystemHandle,
+							managedSystem = managedSystem,
+							systemType = type,
+						});
+
+						ActiveSystemNames.Add(type.FullName + " (SystemBase)");
+						list.Add(type);
+						//Debug.Log($"Injected SystemBase: {type.FullName}");
+					}
 				}
-				else if(typeof(SystemBase).IsAssignableFrom(type)) {
-					// Inject SystemBase (class-based)
-					var managedSystem = world.GetOrCreateSystemManaged(type);
-					simulationGroup.AddSystemToUpdateList(managedSystem);
-					liveManagedSystems.Add(managedSystem);
-					ActiveSystemNames.Add(type.FullName + " (SystemBase)");
-					list.Add(type);
-					//Debug.Log($"Injected SystemBase: {type.FullName}");
+
+				if(list.Count > 0) {
+					DefaultWorldInitialization.AddSystemsToRootLevelSystemGroups(world, list);
+
+					Debug.Log($"Injected {list.Count} systems from ECS Graphs.\n" + string.Join('\n', list.Select(item => item.IsValueType ?
+						$"ISystem => {item.PrettyName(true)}" :
+						$"SystemBase => {item.PrettyName(true)}")));
 				}
 			}
-
-			if(list.Count > 0) {
-				Debug.Log($"Injected {list.Count} systems from ECS Graphs.\n" + string.Join('\n', list.Select(item => item.IsValueType ? 
-					$"ISystem => {item.PrettyName(true)}" : 
-					$"SystemBase => {item.PrettyName(true)}")));
+			catch {
+				Debug.LogError("Error on injecting system, possible because of TypeManager. Try add `DISABLE_TYPEMANAGER_ILPP` define symbol.");
+				throw;
+			}
+			finally {
+				StaticListPool<Type>.Free(list);
 			}
 			//else {
 			//	Debug.LogWarning("No systems found to inject in the loaded assembly.");
 			//}
 		}
 
-		public static void UninjectSystems() {
+		public static void UninjectSystems(bool log = true) {
 			if(loadedAssembly == null) return;
 
 			var world = World.DefaultGameObjectInjectionWorld;
 			if(world == null) return;
 
-			if(Application.isPlaying) {
-				var simulationGroup = world.GetOrCreateSystemManaged<SimulationSystemGroup>();
-				foreach(var sys in liveSystems) {
-					if(world.Unmanaged.IsSystemValid(sys)) {
-						simulationGroup.RemoveSystemFromUpdateList(sys);
+			var initializationGroup = world.GetExistingSystemManaged<InitializationSystemGroup>();
+			var simulationGroup = world.GetExistingSystemManaged<SimulationSystemGroup>();
+			var presentationGroup = world.GetExistingSystemManaged<PresentationSystemGroup>();
+			foreach(var sys in allActiveSystems) {
+				if(sys.IsManagedSystem) {
+					initializationGroup?.RemoveSystemFromUpdateList(sys.managedSystem);
+					simulationGroup?.RemoveSystemFromUpdateList(sys.managedSystem);
+					presentationGroup?.RemoveSystemFromUpdateList(sys.managedSystem);
+					var attrs = sys.UpdateInGroupAttributes;
+					if(attrs.Length > 0) {
+						foreach(var attr in attrs) {
+							var groupTypeIndex = attr.TargetSystemTypeIndex;
+							var componentSystem = world.GetExistingSystemManaged(groupTypeIndex);
+							if(componentSystem is ComponentSystemGroup group) {
+								group.RemoveSystemFromUpdateList(sys.managedSystem);
+							}
+						}
 					}
 				}
-				foreach(var sys in liveManagedSystems) {
-					simulationGroup.RemoveSystemFromUpdateList(sys);
+				else {
+					if(world.Unmanaged.IsSystemValid(sys.systemHandle)) {
+						initializationGroup?.RemoveSystemFromUpdateList(sys.systemHandle);
+						simulationGroup?.RemoveSystemFromUpdateList(sys.systemHandle);
+						presentationGroup?.RemoveSystemFromUpdateList(sys.systemHandle);
+						var attrs = sys.UpdateInGroupAttributes;
+						if(attrs.Length > 0) {
+							foreach(var attr in attrs) {
+								var groupTypeIndex = attr.TargetSystemTypeIndex;
+								var componentSystem = world.GetExistingSystemManaged(groupTypeIndex);
+								if(componentSystem is ComponentSystemGroup group) {
+									group.RemoveSystemFromUpdateList(sys.managedSystem);
+								}
+							}
+						}
+					}
 				}
 			}
-
-			liveSystems.Clear();
-			liveManagedSystems.Clear();
+			// Clear the list of active systems after uninjecting them.
+			allActiveSystems.Clear();
 			ActiveSystemNames.Clear();
-			Debug.Log("Cleared injected systems.");
+
+			//Sort the groups after removing systems to make sure the update order is correct.
+			initializationGroup?.SortSystems();
+			simulationGroup?.SortSystems();
+			presentationGroup?.SortSystems();
+
+			if(log)
+				Debug.Log("Cleared injected systems.");
 		}
 	}
 }

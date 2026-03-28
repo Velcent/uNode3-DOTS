@@ -20,7 +20,8 @@ namespace MaxyGames.UNode.Nodes {
 		public enum DataKind {
 			ReadOnlyComponent,
 			ReadWriteComponent,
-			AspectOrOther,
+			ReadOnlyEnableableComponent,
+			ReadWriteEnableableComponent,
 		}
 		public class Data {
 			public string id = uNodeUtility.GenerateUID();
@@ -28,6 +29,8 @@ namespace MaxyGames.UNode.Nodes {
 			public string name;
 			public SerializedType type = typeof(IComponentData);
 			public DataKind kind = DataKind.ReadWriteComponent;
+
+			public bool IsEnableableQuery => kind == DataKind.ReadOnlyEnableableComponent || kind == DataKind.ReadWriteEnableableComponent;
 
 			[NonSerialized]
 			public ValueOutput port;
@@ -62,8 +65,8 @@ namespace MaxyGames.UNode.Nodes {
 			}
 			for(int i = 0; i < datas.Count; i++) {
 				var data = datas[i];
-				data.port = ValueOutput(data.id, data.type, PortAccessibility.ReadWrite).SetName(!string.IsNullOrEmpty(data.name) ? data.name : ("Item" + (i + 1)));
-				data.port.canSetValue = () => data.kind == DataKind.ReadWriteComponent;
+				data.port = ValueOutput(data.id, () => data.IsEnableableQuery ? typeof(bool) : data.type, PortAccessibility.ReadWrite).SetName(!string.IsNullOrEmpty(data.name) ? data.name : ("Item" + (i + 1)));
+				data.port.canSetValue = () => data.kind == DataKind.ReadWriteComponent || data.kind == DataKind.ReadWriteEnableableComponent;
 			}
 			if(runOn == RunKind.ScheduleParallel) {
 				chunkIndexInQuery = ValueOutput(nameof(chunkIndexInQuery), typeof(int)).SetName("chunkIndexInQuery");
@@ -85,13 +88,19 @@ namespace MaxyGames.UNode.Nodes {
 
 			foreach(var data in datas) {
 				var vName = CG.RegisterVariable(data.port);
+				if(data.type.type?.IsValueType == false) {
+					CG.RegisterPort(data.port, () => vName);
+					continue;
+				}
 				switch(data.kind) {
 					case DataKind.ReadOnlyComponent:
+					case DataKind.ReadOnlyEnableableComponent:
 						if(runOn != RunKind.Run) goto default;
 						vName = vName.CGAccess("ValueRO");
 						CG.RegisterPort(data.port, () => vName);
 						break;
 					case DataKind.ReadWriteComponent:
+					case DataKind.ReadWriteEnableableComponent:
 						if(runOn != RunKind.Run) goto default;
 						CG.RegisterPort(data.port, () => {
 							if(CG.generationState.contextState == CG.ContextState.Set) {
@@ -117,6 +126,12 @@ namespace MaxyGames.UNode.Nodes {
 					case DataKind.ReadOnlyComponent:
 					case DataKind.ReadWriteComponent:
 						if(data.type.type == null || data.type.type.HasImplementInterface(typeof(IComponentData)) == false) {
+							analyzer.RegisterError(this, "Invalid or Unassigned type for query: " + data.port.name);
+						}
+						break;
+					case DataKind.ReadOnlyEnableableComponent:
+					case DataKind.ReadWriteEnableableComponent:
+						if(data.type.type == null || data.type.type.HasImplementInterface(typeof(IEnableableComponent)) == false) {
 							analyzer.RegisterError(this, "Invalid or Unassigned type for query: " + data.port.name);
 						}
 						break;
@@ -154,13 +169,17 @@ namespace MaxyGames.UNode.Nodes {
 					nameof(SystemAPI.Query),
 					datas.Select(item => {
 						var itemType = item.type.type;
+						if(itemType.IsValueType == false)
+							return itemType;
 						switch(item.kind) {
-							case DataKind.AspectOrOther:
-								return itemType;
 							case DataKind.ReadOnlyComponent:
 								return typeof(RefRO<>).MakeGenericType(itemType);
 							case DataKind.ReadWriteComponent:
 								return typeof(RefRW<>).MakeGenericType(itemType);
+							case DataKind.ReadOnlyEnableableComponent:
+								return typeof(EnabledRefRO<>).MakeGenericType(itemType);
+							case DataKind.ReadWriteEnableableComponent:
+								return typeof(EnabledRefRW<>).MakeGenericType(itemType);
 						}
 						throw null;
 					}).ToArray()
@@ -364,6 +383,8 @@ namespace MaxyGames.UNode.Nodes {
 				//}
 				for(int i = 0; i < variableNames.Count; i++) {
 					var data = datas[i];
+					if(data.type.type.IsValueType == false)
+						continue;
 					switch(data.kind) {
 						case DataKind.ReadOnlyComponent:
 							parameters.Add(new CG.MPData(variableNames[i], data.type, RefKind.In));
@@ -371,8 +392,11 @@ namespace MaxyGames.UNode.Nodes {
 						case DataKind.ReadWriteComponent:
 							parameters.Add(new CG.MPData(variableNames[i], data.type, RefKind.Ref));
 							break;
-						case DataKind.AspectOrOther:
-							parameters.Add(new CG.MPData(variableNames[i], data.type));
+						case DataKind.ReadOnlyEnableableComponent:
+							parameters.Add(new CG.MPData(variableNames[i], typeof(EnabledRefRO<>).MakeGenericType(data.type)));
+							break;
+						case DataKind.ReadWriteEnableableComponent:
+							parameters.Add(new CG.MPData(variableNames[i], typeof(EnabledRefRW<>).MakeGenericType(data.type)));
 							break;
 					}
 				}
@@ -413,23 +437,6 @@ namespace MaxyGames.UNode.Nodes {
 					}
 				}
 
-				//var withAll = queryFilters.Where(item => item.filter == QueryFilter.WithAll).ToList();
-				//var withAny = queryFilters.Where(item => item.filter == QueryFilter.WithAny).ToList();
-				//var withNone = queryFilters.Where(item => item.filter == QueryFilter.WithNone).ToList();
-				//var withChangeFilter = queryFilters.Where(item => item.filter == QueryFilter.WithChangeFilter).ToList();
-
-				//if(withAll.Count > 0) {
-				//	classBuilder.RegisterAttribute(typeof(WithAllAttribute), withAll.Select(item => CG.Value(item.type)).ToArray());
-				//}
-				//if(withAny.Count > 0) {
-				//	classBuilder.RegisterAttribute(typeof(WithAnyAttribute), withAny.Select(item => CG.Value(item.type)).ToArray());
-				//}
-				//if(withNone.Count > 0) {
-				//	classBuilder.RegisterAttribute(typeof(WithNoneAttribute), withNone.Select(item => CG.Value(item.type)).ToArray());
-				//}
-				//if(withChangeFilter.Count > 0) {
-				//	classBuilder.RegisterAttribute(typeof(WithChangeFilterAttribute), withChangeFilter.Select(item => CG.Value(item.type)).ToArray());
-				//}
 				if(options != EntityQueryOptions.Default) {
 					classBuilder.RegisterAttribute(typeof(WithOptionsAttribute), options.CGValue());
 				}
@@ -455,10 +462,16 @@ namespace MaxyGames.UNode.Editors {
 
 	class EntitiesForeachDrawer : NodeDrawer<Nodes.EntitiesForeach> {
 		static readonly FilterAttribute componentFilter;
+		static readonly FilterAttribute enableableComponentFilter;
 		static readonly FilterAttribute sharedComponentFilter;
 
 		static EntitiesForeachDrawer() {
 			componentFilter = new FilterAttribute(typeof(IComponentData), typeof(IQueryTypeParameter)) {
+				DisplayInterfaceType = false,
+				DisplayReferenceType = true,
+				DisplayValueType = true,
+			};
+			enableableComponentFilter = new FilterAttribute(typeof(IEnableableComponent)) {
 				DisplayInterfaceType = false,
 				DisplayReferenceType = true,
 				DisplayValueType = true,
@@ -489,27 +502,26 @@ namespace MaxyGames.UNode.Editors {
 						uNodeGUIUtility.GUIChanged(node, UIChangeType.Average);
 					}
 					position.y += EditorGUIUtility.singleLineHeight + 1;
-					uNodeGUIUtility.DrawTypeDrawer(position, value.type, new GUIContent("Type"), type => {
-						value.type = type;
-						if(type.HasImplementInterface(typeof(IComponentData))) {
-							if(value.kind == Nodes.EntitiesForeach.DataKind.AspectOrOther) {
-								value.kind = Nodes.EntitiesForeach.DataKind.ReadWriteComponent;
-							}
-						}
-						else {
-							value.kind = Nodes.EntitiesForeach.DataKind.AspectOrOther;
-						}
-						node.Register();
-						uNodeGUIUtility.GUIChanged(node, UIChangeType.Average);
-					}, componentFilter, option.unityObject);
-					if(value.kind != Nodes.EntitiesForeach.DataKind.AspectOrOther) {
+					if(value.kind == Nodes.EntitiesForeach.DataKind.ReadOnlyComponent || value.kind == Nodes.EntitiesForeach.DataKind.ReadWriteComponent) {
+						uNodeGUIUtility.DrawTypeDrawer(position, value.type, new GUIContent("Component Type"), type => {
+							value.type = type;
+							node.Register();
+							uNodeGUIUtility.GUIChanged(node, UIChangeType.Average);
+						}, componentFilter, option.unityObject);
+					}
+					else {
+						uNodeGUIUtility.DrawTypeDrawer(position, value.type, new GUIContent("Component Type"), type => {
+							value.type = type;
+							node.Register();
+							uNodeGUIUtility.GUIChanged(node, UIChangeType.Average);
+						}, enableableComponentFilter, option.unityObject);
+					}
+					if(value.type.type?.IsValueType == true) {
 						position.y += EditorGUIUtility.singleLineHeight + 1;
 						uNodeGUIUtility.EditValue(position, new GUIContent("Accessibility"), value.kind, (val) => {
-							if(val != Nodes.EntitiesForeach.DataKind.AspectOrOther) {
-								value.kind = val;
-								node.Register();
-								uNodeGUIUtility.GUIChanged(node, UIChangeType.Average);
-							}
+							value.kind = val;
+							node.Register();
+							uNodeGUIUtility.GUIChanged(node, UIChangeType.Average);
 						});
 					}
 				},
@@ -526,10 +538,10 @@ namespace MaxyGames.UNode.Editors {
 					uNodeGUIUtility.GUIChanged(node, UIChangeType.Average);
 				},
 				elementHeight: index => {
-					if(node.datas[index].kind != Nodes.EntitiesForeach.DataKind.AspectOrOther) {
-						return (EditorGUIUtility.singleLineHeight * 3) + 3;
+					if(node.datas[index].type.type?.IsValueType == false) {
+						return (EditorGUIUtility.singleLineHeight * 2) + 3;
 					}
-					return (EditorGUIUtility.singleLineHeight * 2) + 2;
+					return (EditorGUIUtility.singleLineHeight * 3) + 3;
 				});
 
 			uNodeGUI.DrawCustomList(node.queryFilters, "Query Filters",

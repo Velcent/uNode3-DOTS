@@ -90,6 +90,13 @@ namespace MaxyGames.UNode {
 	}
 
 	public static class ECSGraphUtility {
+		/// <summary>
+		/// Retrieves or creates a unique name for the EntityManager associated with the specified node object during code
+		/// generation.
+		/// </summary>
+		/// <param name="nodeObject">The node object for which to retrieve or create the EntityManager name.</param>
+		/// <returns>A unique EntityManager name if code generation is in progress; otherwise, null.</returns>
+		/// <exception cref="Exception">Thrown if the ISystem.OnUpdate method is not found in the graph during code generation.</exception>
 		public static string GetEntityManager(NodeObject nodeObject) {
 			if(CG.isGenerating) {
 				var result = CG.GetUserObject<string>((nodeObject.graphContainer, "EntityManager", typeof(EntityManager)));
@@ -135,6 +142,12 @@ namespace MaxyGames.UNode {
 			return null;
 		}
 
+		/// <summary>
+		/// Retrieves the ECB singleton identifier for the specified type and node object.
+		/// </summary>
+		/// <typeparam name="T">The type implementing IECBSingleton.</typeparam>
+		/// <param name="nodeObject">The node object associated with the ECB singleton.</param>
+		/// <returns>The ECB singleton identifier as a string.</returns>
 		public static string GetECBSingleton<T>(NodeObject nodeObject) where T : IECBSingleton {
 			return GetECBSingleton(typeof(T), nodeObject);
 		}
@@ -174,7 +187,7 @@ namespace MaxyGames.UNode {
 					entities is IJobEntityContainer jobEntity && 
 					jobEntity.indexKind.HasFlags(IJobEntityContainer.IndexKind.ChunkIndexInQuery)) {
 
-					var ecbName = GetECBSingleton<EndSimulationEntityCommandBufferSystem.Singleton>(nodeObject);
+					var ecbName = GetECBSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>(nodeObject);
 					if(autoRegisterVariableInJob) {
 						var variables = entities.JobVariables;
 						if(variables != null) {
@@ -182,7 +195,7 @@ namespace MaxyGames.UNode {
 								name = ecbName,
 								type = typeof(EntityCommandBuffer.ParallelWriter),
 								value = () => ecbName.CGInvoke(nameof(EntityCommandBuffer.AsParallelWriter)),
-								owner = typeof(EndSimulationEntityCommandBufferSystem.Singleton),
+								owner = typeof(BeginSimulationEntityCommandBufferSystem.Singleton),
 							});
 						}
 					}
@@ -191,7 +204,7 @@ namespace MaxyGames.UNode {
 					return;
 				}
 				if(executionMode == ECSLogicExecutionMode.Auto || executionMode == ECSLogicExecutionMode.Schedule || alwaysUseSchedule) {
-					var ecbName = GetECBSingleton<EndSimulationEntityCommandBufferSystem.Singleton>(nodeObject);
+					var ecbName = GetECBSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>(nodeObject);
 					if(autoRegisterVariableInJob) {
 						var variables = entities.JobVariables;
 						if(variables != null) {
@@ -199,7 +212,7 @@ namespace MaxyGames.UNode {
 								name = ecbName,
 								type = typeof(EntityCommandBuffer),
 								value = () => ecbName,
-								owner = typeof(EndSimulationEntityCommandBufferSystem.Singleton),
+								owner = typeof(BeginSimulationEntityCommandBufferSystem.Singleton),
 							});
 						}
 					}
@@ -216,24 +229,48 @@ namespace MaxyGames.UNode {
 				}
 			}
 			if(evt != null) {
-				commandName = GetEntityManager(evt);
-				commandType = typeof(EntityManager);
+				if(alwaysUseSchedule) {
+					commandName = GetECBSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>(nodeObject);
+					commandType = typeof(EntityCommandBuffer);
+				}
+				else {
+					commandName = GetEntityManager(evt);
+					commandType = typeof(EntityManager);
+				}
 			}
 			else {
-				var ecbName = GetEntityManager(nodeObject);
-				if(autoRegisterVariableInJob) {
-					var variables = entities.JobVariables;
-					if(variables != null) {
-						entities.AddJobVariable(new ECSJobVariable() {
-							name = ecbName,
-							type = typeof(EntityManager),
-							value = () => ecbName,
-							owner = typeof(EntityManager),
-						});
+				if(alwaysUseSchedule) {
+					var ecbName = GetECBSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>(nodeObject);
+					if(autoRegisterVariableInJob) {
+						var variables = entities.JobVariables;
+						if(variables != null) {
+							entities.AddJobVariable(new ECSJobVariable() {
+								name = ecbName,
+								type = typeof(EntityCommandBuffer),
+								value = () => ecbName,
+								owner = typeof(BeginSimulationEntityCommandBufferSystem.Singleton),
+							});
+						}
 					}
+					commandName = ecbName;
+					commandType = typeof(EntityCommandBuffer);
 				}
-				commandName = ecbName;
-				commandType = typeof(EntityManager);
+				else {
+					var ecbName = GetEntityManager(nodeObject);
+					if(autoRegisterVariableInJob) {
+						var variables = entities.JobVariables;
+						if(variables != null) {
+							entities.AddJobVariable(new ECSJobVariable() {
+								name = ecbName,
+								type = typeof(EntityManager),
+								value = () => ecbName,
+								owner = typeof(EntityManager),
+							});
+						}
+					}
+					commandName = ecbName;
+					commandType = typeof(EntityManager);
+				}
 			}
 		}
 
@@ -418,6 +455,14 @@ namespace MaxyGames.UNode {
 			return nm;
 		}
 
+		/// <summary>
+		/// Retrieves or creates a unique identifier for an ECB singleton associated with the specified type and node object
+		/// during code generation.
+		/// </summary>
+		/// <param name="ecbType">The type of the ECB singleton.</param>
+		/// <param name="nodeObject">The node object containing the graph context.</param>
+		/// <returns>A unique identifier for the ECB singleton if code generation is active; otherwise, null.</returns>
+		/// <exception cref="Exception">Thrown if the OnUpdate method is not found in the graph during post-class manipulation.</exception>
 		public static string GetECBSingleton(Type ecbType, NodeObject nodeObject) {
 			if(CG.isGenerating) {
 				var result = CG.GetUserObject<string>((nodeObject.graphContainer, "ECB-Singleton", ecbType));
@@ -446,6 +491,13 @@ namespace MaxyGames.UNode {
 
 
 		private static Dictionary<Type, bool> unmanagedTypeMap = new();
+		/// <summary>
+		/// Determines whether the specified type is a value type composed entirely of unmanaged types.
+		/// </summary>
+		/// <remarks>A type is considered fully unmanaged if it is a value type and all its fields are also fully
+		/// unmanaged. Primitive types, pointers, and enums are not considered fully unmanaged by this method.</remarks>
+		/// <param name="type">The type to evaluate for unmanaged composition.</param>
+		/// <returns>true if the type is a value type and all its fields are unmanaged types; otherwise, false.</returns>
 		public static bool IsFullyUnmanaged(Type type) {
 			if(unmanagedTypeMap.TryGetValue(type, out var result)) {
 				return result;

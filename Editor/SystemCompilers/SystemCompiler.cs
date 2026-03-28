@@ -44,9 +44,15 @@ namespace MaxyGames.UNode.Editors {
 				Directory.CreateDirectory(OutputDirectory);
 				// Use AssemblyBuilder
 				var builder = new AssemblyBuilder(path, scriptPaths);
-				builder.additionalDefines = RoslynUtility.AssemblyCSharp.defines;
-				builder.additionalReferences = RoslynUtility.AssemblyCSharp.allReferences.Append(RoslynUtility.AssemblyCSharp.outputPath).ToArray();
+
+				builder.flags = AssemblyBuilderFlags.EditorAssembly;
+				builder.referencesOptions = ReferencesOptions.UseEngineModules;
 				
+				if(RoslynUtility.AssemblyCSharp != null) {
+					builder.additionalDefines = RoslynUtility.AssemblyCSharp.defines;
+					builder.additionalReferences = RoslynUtility.AssemblyCSharp.allReferences.Append(RoslynUtility.AssemblyCSharp.outputPath).ToArray();
+				}
+
 				builder.buildFinished += (path, result) => {
 					bool valid = true;
 					foreach(var msg in result) {
@@ -75,6 +81,11 @@ namespace MaxyGames.UNode.Editors {
 					HotReloadSystemManager.LoadCompiledAssembly(OutputDllPath);
 					
 					callback?.Invoke(true);
+
+					if(Application.isPlaying) {
+						HotReloadSystemManager.UninjectSystems(false);
+						HotReloadSystemManager.InjectSystems(false);
+					}
 				};
 
 				builder.buildStarted += path => Debug.Log($"Starting compile {scriptPaths.Length} scripts.\n" + string.Join('\n', scriptPaths.Select(p => "Path => " + p)));
@@ -114,9 +125,14 @@ namespace MaxyGames.UNode.Editors {
 					File.WriteAllBytes(OutputPath + ".pdb", rawPdb);
 
 					Debug.Log("Compiled systems successfully.");
-					if(Application.isPlaying)
-						HotReloadSystemManager.LoadCompiledAssembly(OutputPath + ".dll");
+					HotReloadSystemManager.LoadCompiledAssembly(OutputPath + ".dll");
+
 					callback?.Invoke(true);
+
+					if(Application.isPlaying) {
+						HotReloadSystemManager.UninjectSystems(false);
+						HotReloadSystemManager.InjectSystems(false);
+					}
 				}
 			}
 		}
