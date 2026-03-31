@@ -17,8 +17,8 @@ namespace MaxyGames.UNode.Editors {
 		public static string OutputPath => "Library/uNode_ECS/" + OutputName;
 		public static string OutputDirectory => "Library/uNode_ECS";
 		public static string OutputName => "SystemAssembly";
-		private static string OutputDllPath => OutputPath + ".dll";
-		private static string OutputPdbPath => OutputPath + ".pdb";
+		public static string OutputDllPath => OutputPath + ".dll";
+		public static string OutputPdbPath => OutputPath + ".pdb";
 
 		public static string CSXPath => ""; // Relative to project root
 		private static int m_fileIndex = 0;

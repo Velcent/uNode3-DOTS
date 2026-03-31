@@ -65,6 +65,33 @@ namespace MaxyGames.UNode {
 
 	}
 
+	[Serializable]
+	public class SystemOrderData {
+		public SystemOrderKind kind;
+		public ECSGraph graph;
+		public SerializedType type = SerializedType.None;
+
+		public string Name {
+			get {
+				if(graph != null) {
+					return graph.name;
+				}
+				else if(type != null) {
+					return type.prettyName;
+				}
+				return "(none)";
+			}
+		}
+	}
+
+	public enum SystemOrderKind {
+		UpdateInGroup,
+		UpdateAfter,
+		UpdateBefore,
+		CreateAfter,
+		CreateBefore,
+	}
+
 	public enum ECSLogicExecutionMode {
 		Auto = 0,
 		Run = 1,

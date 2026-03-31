@@ -26,6 +26,7 @@ namespace MaxyGames.UNode {
 
 		public bool burstCompile = true;
 		public List<SerializedType> requiredForUpdates = new List<SerializedType>();
+		public List<SystemOrderData> systemOrder = new List<SystemOrderData>();
 
 		[HideInInspector, SerializeField]
 		private GeneratedScriptData scriptData = new GeneratedScriptData();
@@ -205,6 +206,34 @@ namespace MaxyGames.UNode {
 
 			//Post generations
 			CG.RegisterPostGeneration((classData) => {
+				if(systemOrder.Count > 0) {
+					static string GetTypeCode(SystemOrderData data) {
+						if(data.graph != null) {
+							return CG.Typeof(data.graph);
+						}
+						return CG.Typeof(CG.Type(data.type));
+					}
+
+					foreach(var orderData in systemOrder.Where(d => d.type != null)) {
+						switch(orderData.kind) {
+							case SystemOrderKind.UpdateInGroup:
+								classData.RegisterAttribute(typeof(UpdateInGroupAttribute), GetTypeCode(orderData));
+								break;
+							case SystemOrderKind.UpdateBefore:
+								classData.RegisterAttribute(typeof(UpdateBeforeAttribute), GetTypeCode(orderData));
+								break;
+							case SystemOrderKind.UpdateAfter:
+								classData.RegisterAttribute(typeof(UpdateAfterAttribute), GetTypeCode(orderData));
+								break;
+							case SystemOrderKind.CreateBefore:
+								classData.RegisterAttribute(typeof(CreateBeforeAttribute), GetTypeCode(orderData));
+								break;
+							case SystemOrderKind.CreateAfter:
+								classData.RegisterAttribute(typeof(CreateAfterAttribute), GetTypeCode(orderData));
+								break;
+						}
+					}
+				}
 				if(IsISystem) {
 					if(burstCompile && !CG.debugScript && GraphData.attributes.Any(a => a.type == typeof(BurstCompileAttribute)) == false) {
 						classData.RegisterAttribute(typeof(BurstCompileAttribute));
