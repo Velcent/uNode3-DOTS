@@ -22,15 +22,6 @@ namespace MaxyGames.UNode.Editors {
 				else if(state == PlayModeStateChange.ExitingPlayMode) {
 					UninjectSystems();
 				}
-				else if(state == PlayModeStateChange.ExitingEditMode) {
-					if(loadedAssembly == null) {
-						var path = SystemCompiler.OutputPath + ".dll";
-						if(File.Exists(path)) {
-							//Assembly should be loaded before play mode, but just in case, try to load it again if not loaded yet.
-							LoadCompiledAssembly(path);
-						}
-					}
-				}
 			};
 		}
 
@@ -110,7 +101,10 @@ namespace MaxyGames.UNode.Editors {
 		static void InitializeOnPlay() {
 			if(loadedAssembly == null) {
 				var path = SystemCompiler.OutputPath + ".dll";
-				if(File.Exists(path) == false) {
+				if(File.Exists(path)) {
+					LoadCompiledAssembly(path);
+				}
+				else {
 					//Skip if no compiled assembly found, which can happen when entering play mode before any graph is compiled. Systems will be injected when the some graph is compiled and loaded.
 					return;
 				}

@@ -72,7 +72,7 @@ namespace MaxyGames.UNode.Nodes {
 			}
 			for(int i = 0; i < datas.Count; i++) {
 				var data = datas[i];
-				data.port = ValueOutput(data.id, () => data.IsEnableableQuery ? typeof(bool) : data.type, PortAccessibility.ReadWrite).SetName(!string.IsNullOrEmpty(data.name) ? data.name : ("Item" + (i + 1)));
+				data.port = ValueOutput(data.id, () => data.IsEnableableQuery ? typeof(bool) : data.type, PortAccessibility.ReadWrite).SetName(!string.IsNullOrEmpty(data.name) ? data.name : data.type.prettyName.ToCamelCase() ?? ("Item" + (i + 1)));
 				data.port.canSetValue = () => data.kind == DataKind.ReadWriteComponent || data.kind == DataKind.ReadWriteEnableableComponent;
 			}
 			if(indexKind != IndexKind.None && indexKind != IndexKind.ChunkIndexInQuery) {
