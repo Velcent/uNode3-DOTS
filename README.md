@@ -4,9 +4,9 @@ uNode 3 Support for Unity DOTS / ECS
 ## **Setup**
 
 ### Requirements
-* Unity 2022.3 or later
+* Unity 6.3 or later
 * Unity Entities 1.0.14 or later
-* uNode v3.1.3 or later
+* uNode v3.2.9 or later
 
 ### Installation
 

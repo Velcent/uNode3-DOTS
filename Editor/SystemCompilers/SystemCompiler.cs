@@ -3,12 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MaxyGames.UNode;
-using MaxyGames.UNode.Editors;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Unity.CompilationPipeline.Common.ILPostProcessing;
 using UnityEditor;
+using UnityEditor.Build.Reporting;
 using UnityEditor.Compilation;
 using UnityEngine;
 
@@ -20,10 +19,53 @@ namespace MaxyGames.UNode.Editors {
 		public static string OutputDllPath => OutputPath + ".dll";
 		public static string OutputPdbPath => OutputPath + ".pdb";
 
+		public static string OutputProjectDirectory => GenerationUtility.generatedPath + Path.DirectorySeparatorChar + "ECS_System";
+
 		public static string CSXPath => ""; // Relative to project root
 		private static int m_fileIndex = 0;
 
 		internal static bool useAssemblyBuilder = true;
+
+		internal class BuildProcessor : UnityEditor.Build.IPreprocessBuildWithReport, UnityEditor.Build.IPostprocessBuildWithReport {
+			public int callbackOrder => int.MinValue + 1000;
+
+			public void OnPreprocessBuild(BuildReport report) {
+				var graphs = GraphUtility.FindAllGraphAssets().Where(obj => obj.GetType().FullName == "MaxyGames.UNode.ECSGraph").ToArray();
+				var scripts = GenerationUtility.GenerateScriptForGraphs(graphs, "Build_ECS_System");
+				var dir = OutputProjectDirectory;
+				foreach(var script in scripts) {
+					string path;
+					if(string.IsNullOrWhiteSpace(script.Namespace) == false) {
+						Directory.CreateDirectory(dir + Path.DirectorySeparatorChar + script.Namespace);
+						path = Path.GetFullPath(dir) + Path.DirectorySeparatorChar + script.Namespace + Path.DirectorySeparatorChar + script.fileName + ".cs";
+					}
+					else {
+						path = Path.GetFullPath(dir) + Path.DirectorySeparatorChar + script.fileName + ".cs";
+					}
+					List<ScriptInformation> informations;
+					var generatedScript = script.ToScript(out informations, true);
+					using(StreamWriter sw = new StreamWriter(path)) {
+						if(informations != null) {
+							uNodeEditor.SavedData.RegisterGraphInfos(informations, script.graphOwner, path);
+						}
+						sw.Write(GenerationUtility.ConvertLineEnding(generatedScript, Application.platform != RuntimePlatform.WindowsEditor));
+						sw.Close();
+					}
+				}
+			}
+
+			public void OnPostprocessBuild(BuildReport report) {
+				// Clean up generated scripts after build
+				var buildScripts = Directory.GetFiles(OutputProjectDirectory, "*.cs", SearchOption.AllDirectories);
+				foreach(var script in buildScripts) {
+					try {
+						File.Delete(script);
+					} catch (Exception ex) {
+						Debug.LogError($"Failed to delete build script {script}: {ex.Message}");
+					}
+				}
+			}
+		}
 
 		public static void GenerateAndCompileGraphs() {
 			var graphs = GraphUtility.FindAllGraphAssets().Where(obj => obj.GetType().FullName == "MaxyGames.UNode.ECSGraph").ToArray();
