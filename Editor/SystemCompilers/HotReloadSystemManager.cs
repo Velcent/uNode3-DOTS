@@ -60,13 +60,16 @@ namespace MaxyGames.UNode.Editors {
 				}
 				//type.GetFieldCached("s_StructTypes").SetValue(null, SerializerUtility.Duplicate(m_oldStructTypes));
 			};
+
+			SystemCompiler.NotifyBurst(path);
+
 			loadedAssembly = Assembly.Load(File.ReadAllBytes(path), File.ReadAllBytes(Path.ChangeExtension(path, ".pdb")));
 			foreach(var t in loadedAssembly.GetTypes()) {
 				var type = t;
 				if(type.Name.StartsWith("__")) {
 					var methods = type.GetMethods();
 					foreach(var m in methods) {
-						if(m.IsDefined(typeof(RuntimeInitializeOnLoadMethodAttribute), false)) {
+						if(m.IsDefined(typeof(RuntimeInitializeOnLoadMethodAttribute), false) || m.IsDefined(typeof(InitializeOnLoadMethodAttribute), false)) {
 							//Debug.Log(m);
 							var method = m;
 							postAction += () => EarlyInitHelpers.AddEarlyInitFunction(() => method.InvokeOptimized(null));

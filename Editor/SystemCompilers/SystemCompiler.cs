@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using MaxyGames.CompilerBuilder;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Unity.CompilationPipeline.Common.ILPostProcessing;
@@ -19,12 +21,14 @@ namespace MaxyGames.UNode.Editors {
 		public static string OutputDllPath => OutputPath + ".dll";
 		public static string OutputPdbPath => OutputPath + ".pdb";
 
+		static string ScriptAssemlyPath => "Library/ScriptAssemblies";
+
 		public static string OutputProjectDirectory => GenerationUtility.generatedPath + Path.DirectorySeparatorChar + "ECS_System";
 
 		public static string CSXPath => ""; // Relative to project root
 		private static int m_fileIndex = 0;
 
-		internal static bool useAssemblyBuilder = true;
+		internal static bool useAssemblyBuilder = false;
 
 		internal class BuildProcessor : UnityEditor.Build.IPreprocessBuildWithReport, UnityEditor.Build.IPostprocessBuildWithReport {
 			public int callbackOrder => int.MinValue + 1000;
@@ -113,6 +117,8 @@ namespace MaxyGames.UNode.Editors {
 						Debug.LogError("Compile failed");
 						return;
 					}
+					//var rawAssembly = File.ReadAllBytes(path + ".dll");
+					//var rawPdb = File.ReadAllBytes(path + ".pdb");
 					RunILPP(path, out var rawAssembly, out var rawPdb);
 
 					File.WriteAllBytes(OutputDllPath, rawAssembly);
@@ -138,44 +144,157 @@ namespace MaxyGames.UNode.Editors {
 				}
 			}
 			else {
-				//var syntaxTrees = csxFiles.Select(file => CSharpSyntaxTree.ParseText(File.ReadAllText(file))).ToList();
-
-				//var references = AppDomain.CurrentDomain.GetAssemblies()
-				//	.Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-				//	.Select(a => MetadataReference.CreateFromFile(a.Location))
-				//	.Cast<MetadataReference>();
-
-				//var compilation = CSharpCompilation.Create("HotReloadSystemTemp")
-				//	.WithOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
-				//	.AddReferences(references)
-				//	.AddSyntaxTrees(syntaxTrees);
-				//var result = compilation.Emit(OutputPath);
-
 				var filename = "SystemTemp" + ++m_fileIndex;
 				Directory.CreateDirectory(Path.GetDirectoryName(OutputPath));
-				var result = RoslynUtility.CompileFilesAndSave(filename, scriptPaths, OutputPath + ".dll", false);
 
-				if(!result.isSuccess) {
-					result.LogErrors();
-					callback?.Invoke(false);
+				if(RoslynUtility.AssemblyCSharp != null) {
+					var option = RoslynCodeCompiler.CreateCompilerOption(RoslynUtility.AssemblyCSharp, filename);
+					option.References = option.References.Append(Path.GetFullPath(RoslynUtility.AssemblyCSharp.outputPath)).ToArray();
+					option.SourceFiles = scriptPaths;
+
+					int progressID = -1;
+					float time = uNodeThreadUtility.time;
+					float total = 3;
+					bool progresFinish = false;
+					const float progressTimeout = 10;
+
+					uNodeThreadUtility.ExecuteWhile(() => {
+						var current = uNodeThreadUtility.time - time;
+						if(progresFinish || current >= progressTimeout) {
+							// We've finished - remove progress bar.
+							if(Progress.Exists(progressID)) {
+								Progress.Remove(progressID);
+								progressID = -1;
+							}
+							return false;
+						}
+						float curr = current;
+						if(curr >= total) {
+							curr = total;
+						}
+						// Do we need to create the progress bar?
+						if(!Progress.Exists(progressID)) {
+							progressID = Progress.Start(
+								"uNode - Compiling ECS Graphs",
+								"Compiling ECS System...",
+								Progress.Options.Managed);
+						}
+
+						Progress.Report(
+							progressID,
+							curr / total + 0.1f,
+							$"Compiling ECS System....");
+						return true;
+					}, static () => { });
+
+					RoslynCodeCompiler.Run(option, result => {
+						try {
+							progresFinish = true;
+							if(result.Success) {
+								var dllPath = result.OutputPath;
+								var pdbPath = Path.ChangeExtension(dllPath, ".pdb");
+								if(File.Exists(dllPath) && File.Exists(pdbPath)) {
+									File.Copy(dllPath, OutputDllPath, true);
+									File.Copy(pdbPath, OutputPdbPath, true);
+
+									Debug.Log("Compiled to: " + OutputPath);
+
+									uNodeThreadUtility.Queue(() => {
+										HotReloadSystemManager.LoadCompiledAssembly(OutputDllPath);
+
+										callback?.Invoke(true);
+
+										if(Application.isPlaying) {
+											HotReloadSystemManager.UninjectSystems(false);
+											HotReloadSystemManager.InjectSystems(false);
+										}
+									});
+								}
+								else {
+									throw null;
+								}
+							}
+							else {
+								Debug.LogError("Compile failed");
+								callback?.Invoke(false);
+							}
+						}
+						catch(Exception ex) {
+							Debug.LogException(ex);
+						}
+					});
 				}
-				else {
+			}
+		}
 
-					RunILPP(OutputPath, out var rawAssembly, out var rawPdb);
+		static Type loaderType => "Unity.Burst.Editor.BurstLoader".ToType(false);
+		static Type burstCompilerType => "Unity.Burst.BurstCompiler".ToType(false);
 
-					File.WriteAllBytes(OutputPath + ".dll", rawAssembly);
-					File.WriteAllBytes(OutputPath + ".pdb", rawPdb);
+		static DateTime m_LastCompiledTime;
+		static int m_BurstCompileIndex;
+		static List<string> m_AllSystemAssemblies = new();
 
-					Debug.Log("Compiled systems successfully.");
-					HotReloadSystemManager.LoadCompiledAssembly(OutputPath + ".dll");
+		internal static void NotifyBurst(string dllPath) {
+			var pdbPath = Path.ChangeExtension(dllPath, ".pdb");
+			if(RoslynUtility.AssemblyCSharp != null && File.Exists(dllPath) && File.Exists(pdbPath)) {
+				var destDllPath = Path.Combine(ScriptAssemlyPath, OutputName + (++m_BurstCompileIndex) + ".dll");
+				var destPdbPath = Path.ChangeExtension(destDllPath, ".pdb");
 
-					callback?.Invoke(true);
+				var lastWriteTime = File.GetLastWriteTime(dllPath);
+				//Notify only when the system compiler is changed.
+				if(lastWriteTime != m_LastCompiledTime || File.Exists(destDllPath) == false) {
+					m_LastCompiledTime = lastWriteTime;
 
-					if(Application.isPlaying) {
-						HotReloadSystemManager.UninjectSystems(false);
-						HotReloadSystemManager.InjectSystems(false);
+#if UNODE_DEV
+					Debug.Log("Notified Burst Compiler");
+#endif
+
+					File.Copy(dllPath, destDllPath, true);
+					File.Copy(pdbPath, destPdbPath, true);
+
+					NotifyCompilationStarted();
+
+					foreach(var p in m_AllSystemAssemblies) {
+						var path = Path.GetFullPath(p);
+						//Debug.Log("Skipping system assembly for burst: " + path);
+						NotifyAssemblyCompilationNotRequired(path);
 					}
+
+					var finishedPath = Path.GetFullPath(destDllPath);
+					foreach(var path in Directory.GetFiles(ScriptAssemlyPath, "*.dll")) {
+						var p = Path.GetFullPath(path);
+						if(finishedPath == p) {
+							continue;
+						}
+						NotifyAssemblyCompilationNotRequired(p);
+					}
+					NotifyAssemblyCompilationFinished(finishedPath, RoslynUtility.AssemblyCSharp.defines);
+					NotifyCompilationFinished();
+
+					m_AllSystemAssemblies.Add(destDllPath);
 				}
+			}
+
+			static void NotifyCompilationStarted() {
+				if(loaderType == null || burstCompilerType == null) return;
+				var notifyCompilationStarted = burstCompilerType.GetMemberCached("NotifyCompilationStarted") as MethodInfo;
+				var getAssemblyFolders = loaderType.GetMemberCached("GetAssemblyFolders") as MethodInfo;
+				notifyCompilationStarted.InvokeOptimized(null, getAssemblyFolders.InvokeOptimized(null), new string[0]);
+			}
+
+			static void NotifyAssemblyCompilationFinished(string path, string[] defines) {
+				if(loaderType == null || burstCompilerType == null) return;
+				burstCompilerType.GetMemberCached("NotifyAssemblyCompilationFinished").ConvertTo<MethodInfo>().InvokeOptimized(null, Path.GetFileNameWithoutExtension(path), defines);
+			}
+
+			static void NotifyAssemblyCompilationNotRequired(string path) {
+				if(loaderType == null || burstCompilerType == null) return;
+				burstCompilerType.GetMemberCached("NotifyAssemblyCompilationNotRequired").ConvertTo<MethodInfo>().InvokeOptimized(null, Path.GetFileNameWithoutExtension(path));
+			}
+
+			static void NotifyCompilationFinished() {
+				if(loaderType == null || burstCompilerType == null) return;
+				burstCompilerType.GetMemberCached("NotifyCompilationFinished").ConvertTo<MethodInfo>().InvokeOptimized(null);
 			}
 		}
 
