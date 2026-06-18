@@ -16,6 +16,8 @@ using Unity.Transforms;
 [assembly: TypeIcons.RegisterIconGuid(typeof(EntityQuery), "ba164113c38602b4da035d272adcd15d")]
 [assembly: TypeIcons.RegisterIconGuid(typeof(SystemState), "ea8e3d30657bf844e9cbea6a2ea03c8d")]
 [assembly: TypeIcons.RegisterIconGuid(typeof(EntityManager), "288170a47a07b7d419f38ede984483d9")]
+[assembly: TypeIcons.RegisterIconGuid(typeof(EntityCommandBuffer), "4ef3eef79070d834491d7a4dae8b877e")]
+[assembly: TypeIcons.RegisterIconGuid(typeof(EntityCommandBuffer.ParallelWriter), "4ef3eef79070d834491d7a4dae8b877e")]
 [assembly: TypeIcons.RegisterIconGuid(typeof(JobHandle), "99e6b2b1a7b4e6947bbae8c61e1948ee")]
 [assembly: TypeIcons.RegisterIconGuid(typeof(IBufferElementData), "cec858d3726e3434baa09488467e52e6", true)]
 [assembly: TypeIcons.RegisterIconGuid(typeof(ISharedComponentData), "ccfa41989efd67d4c80096414c6b1ea7", true)]
@@ -43,6 +45,8 @@ using Unity.Transforms;
 [assembly: TypeIcons.RegisterIconGuid(typeof(int3), "3bdb7826b4cb4a0489f0a00586f0f35a")]
 [assembly: TypeIcons.RegisterIconGuid(typeof(int4), "254dc6d6291ccb2458309f8e393a5852")]
 
+[assembly: TypeIcons.RegisterIconGuid(typeof(Unity.Mathematics.Random), "24809ee1cdf9919488ab89b8c4442a22")]
+
 namespace MaxyGames.UNode.Editors {
 	static class TypeIconFilter {
 		public sealed class ComponentTagFilter : TypeIcons.ITypeIconFilter {
@@ -60,10 +64,16 @@ namespace MaxyGames.UNode.Editors {
 		public sealed class TypeIconSelector : TypeIcons.ITypeIconSelector {
 			public Texture nativeArrayIcon;
 			public Texture nativeListIcon;
+			public Texture dynamicBufferIcon;
+			public Texture componentLookupIcon;
+			public Texture bufferLookupIcon;
 
 			public TypeIconSelector() {
 				nativeArrayIcon = uNodeEditorUtility.Icons.GetIconByGuid("4275ba9e04141814d864f80ad1142814");
 				nativeListIcon = uNodeEditorUtility.Icons.GetIconByGuid("10348a0ba96fb9041a4ddc5e6a2b3f82");
+				dynamicBufferIcon = uNodeEditorUtility.Icons.GetIconByGuid("c5bfe5f95a6a6d241a98b6a6feb7ebcd");
+				componentLookupIcon = uNodeEditorUtility.Icons.GetIconByGuid("1606d25d4517ea34397247465689d238");
+				bufferLookupIcon = uNodeEditorUtility.Icons.GetIconByGuid("ea4df29b730518f47b710c71c8c0223a");
 			}
 
 			public Texture GetIcon(Type type) {
@@ -76,12 +86,30 @@ namespace MaxyGames.UNode.Editors {
 						else if(type == typeof(NativeList<>)) {
 							return nativeListIcon;
 						}
+						else if(type == typeof(DynamicBuffer<>)) {
+							return dynamicBufferIcon;
+						}
+						else if(type == typeof(ComponentLookup<>)) {
+							return componentLookupIcon;
+						}
+						else if(type == typeof(BufferLookup<>)) {
+							return bufferLookupIcon;
+						}
 					}
 					else if(type == typeof(NativeArray<>)) {
 						return nativeArrayIcon;
 					}
 					else if(type == typeof(NativeList<>)) {
 						return nativeListIcon;
+					}
+					else if(type == typeof(DynamicBuffer<>)) {
+						return dynamicBufferIcon;
+					}
+					else if(type == typeof(ComponentLookup<>)) {
+						return componentLookupIcon;
+					}
+					else if(type == typeof(BufferLookup<>)) {
+						return bufferLookupIcon;
 					}
 				}
 				return null;

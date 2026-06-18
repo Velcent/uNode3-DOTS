@@ -210,6 +210,12 @@ namespace MaxyGames.UNode {
 					return null;
 				}
 				var result = loadedAssembly.GetType(typeName);
+				//if(result == null) {
+				//	var types = loadedAssembly.GetTypes();
+				//	foreach(var t in types) {
+				//		Debug.Log(t);
+				//	}
+				//}
 				if(result == null && throwException) {
 					throw new Exception($"Couldn't find type: {typeName}");
 				}
@@ -694,14 +700,18 @@ namespace MaxyGames.UNode {
 		/// Determines whether the specified type is a value type composed entirely of unmanaged types.
 		/// </summary>
 		/// <remarks>A type is considered fully unmanaged if it is a value type and all its fields are also fully
-		/// unmanaged. Primitive types, pointers, and enums are not considered fully unmanaged by this method.</remarks>
+		/// unmanaged.</remarks>
 		/// <param name="type">The type to evaluate for unmanaged composition.</param>
 		/// <returns>true if the type is a value type and all its fields are unmanaged types; otherwise, false.</returns>
 		public static bool IsFullyUnmanaged(Type type) {
 			if(unmanagedTypeMap.TryGetValue(type, out var result)) {
 				return result;
 			}
-			if(!type.IsValueType || type.IsPrimitive || type.IsPointer || type.IsEnum) {
+			if(type.IsPrimitive || type.IsPointer || type.IsEnum) {
+				unmanagedTypeMap[type] = true;
+				return true;
+			}
+			if(type.IsValueType == false) {
 				unmanagedTypeMap[type] = false;
 				return false;
 			}
