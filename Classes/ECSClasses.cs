@@ -210,12 +210,12 @@ namespace MaxyGames.UNode {
 					return null;
 				}
 				var result = loadedAssembly.GetType(typeName);
-				//if(result == null) {
-				//	var types = loadedAssembly.GetTypes();
-				//	foreach(var t in types) {
-				//		Debug.Log(t);
-				//	}
-				//}
+				if(result == null) {
+					var types = loadedAssembly.GetTypes();
+					foreach(var t in types) {
+						Debug.Log(t);
+					}
+				}
 				if(result == null && throwException) {
 					throw new Exception($"Couldn't find type: {typeName}");
 				}

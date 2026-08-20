@@ -10,6 +10,8 @@ using Unity.Transforms;
 using System.Reflection;
 
 namespace MaxyGames.UNode {
+	public interface IDOTSGraph : IGraph { }
+
 	[GraphSystem(
 		supportAttribute = true,
 		supportModifier = true,
@@ -18,7 +20,7 @@ namespace MaxyGames.UNode {
 		isScriptGraph = true,
 		generationKind = GenerationKind.Compatibility)]
 	[TypeIcons.IconGuid("9b88b1c74c6a1244b97f851a405560c9")]
-	public class ECSGraph : GraphAsset, IClassGraph, IClassModifier, IGraphWithVariables, IGraphWithProperties, IGraphWithFunctions, IGraphWithAttributes, INamespaceSystem, ICustomMainGraph, IGraphWithEventGraph, IGeneratorPrePostInitializer, IPrivateGraph {
+	public class ECSGraph : GraphAsset, IDOTSGraph, IClassGraph, IClassModifier, IGraphWithVariables, IGraphWithProperties, IGraphWithFunctions, IGraphWithAttributes, INamespaceSystem, ICustomMainGraph, IGraphWithEventGraph, IGeneratorPrePostInitializer, IPrivateGraph {
 		public string @namespace;
 		public List<string> usingNamespaces = new List<string>() { "Unity.Burst", "Unity.Entities", "Unity.Transforms", "Unity.Mathematics" };
 		public ClassModifier modifier = new ClassModifier() { Partial = true };

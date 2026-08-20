@@ -72,8 +72,7 @@ namespace MaxyGames.UNode.Editors {
 
 		public static void GenerateAndCompileGraphs() {
 			var graphs = GraphEditorUtility.FindAllGraphAssets().Where(obj => {
-				var name = obj.GetType().FullName;
-				return name == "MaxyGames.UNode.ECSGraph" || name == "MaxyGames.UNode.EntityBehaviorGraph";
+				return obj is IDOTSGraph;
 			}).ToArray();
 			var scripts = GenerationUtility.GenerateScriptForGraphs(graphs, "ECS_System");
 			CompileScripts(scripts.Select(s => GenerationUtility.GetGraphData(s.graphOwner).path).ToArray());
